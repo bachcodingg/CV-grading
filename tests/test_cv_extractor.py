@@ -123,3 +123,17 @@ def test_missing_sections_produce_warnings():
     c = extract_candidate(doc_from_text("Jane Doe\nSome text without any structure at all."))
     assert any("work-experience" in w for w in c.warnings)
     assert any("email" in w for w in c.warnings)
+
+
+def test_certification_level_suffix_is_not_an_issuer():
+    c = extract_candidate(doc_from_text("""
+CERTIFICATIONS
+AWS Certified Solutions Architect – Associate (2022)
+Professional Scrum Master I – Scrum.org
+Deep Learning Specialization from DeepLearning.AI
+"""))
+    assert [(x.name, x.issuer) for x in c.certifications] == [
+        ("AWS Certified Solutions Architect – Associate", "AWS"),
+        ("Professional Scrum Master I", "Scrum.org"),
+        ("Deep Learning Specialization", "DeepLearning.AI"),
+    ]

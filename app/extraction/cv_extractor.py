@@ -554,10 +554,14 @@ def parse_certifications(lines: list[Line], cand: Candidate) -> None:
             cert.field_spans["date"] = Span(start=ln.start + off + single[1].start, end=ln.start + off + single[1].end)
             name = (text[: single[1].start] + text[single[1].end:])
         name = _clean(re.sub(r"\(\s*\)", "", name))
-        parts = re.split(r"\s+[|·•]\s+|\s+[–—-]\s+|\t|\s{3,}|\s+(?:by|from|issued by)\s+", name)
+        parts = re.split(r"\s+[|·•]\s+|\t|\s{3,}|\s+(?:by|from|issued by)\s+", name)
         pieces = [p for p in (_clean(x) for x in parts) if p]
-        if len(pieces) == 1 and (m := re.match(r"^(.*\S),\s*([^,]+)$", pieces[0])) and CERT_ISSUERS.fullmatch(m.group(2)):
-            pieces = [m.group(1), m.group(2)]
+        if len(pieces) == 1:
+            # "Name – CNCF" / "Name, Coursera": split only when the tail is a known issuer,
+            # so "Solutions Architect – Associate" keeps its level.
+            m = re.match(r"^(.*\S)(?:\s+[–—-]\s+|,\s*)([^,–—]+)$", pieces[0])
+            if m and CERT_ISSUERS.fullmatch(m.group(2).strip()):
+                pieces = [m.group(1), m.group(2).strip()]
         if not pieces:
             continue
         cert.name = pieces[0]
