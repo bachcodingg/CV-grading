@@ -14,6 +14,21 @@ BBox = tuple[float, float, float, float]  # x0, y0, x1, y1 in PDF points
 
 FileType = Literal["pdf", "docx"]
 
+# Typographic ligatures and invisible characters that break keyword matching
+# ("Certiﬁed" != "Certified"). Private-use icon glyphs are kept on purpose so
+# the parse-check can report them.
+_CLEAN = str.maketrans({
+    "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl",
+    "ﬅ": "st", "ﬆ": "st",
+    " ": " ", " ": " ", " ": " ", " ": " ", " ": " ",
+    "­": None, "​": None, "‌": None, "‍": None, "⁠": None, "﻿": None,
+    "	": "	",
+})
+
+
+def clean_text(text: str) -> str:
+    return text.translate(_CLEAN)
+
 
 @dataclass
 class Line:
@@ -103,7 +118,9 @@ class Document:
     text: str = ""
 
     def finalize(self) -> Document:
-        """Drop empty lines and compute ``text`` plus per-line offsets."""
+        """Clean text, drop empty lines and compute ``text`` plus per-line offsets."""
+        for ln in self.lines:
+            ln.text = clean_text(ln.text)
         self.lines = [ln for ln in self.lines if ln.text.strip()]
         parts: list[str] = []
         pos = 0

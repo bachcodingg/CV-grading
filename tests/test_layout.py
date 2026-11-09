@@ -52,3 +52,10 @@ def test_document_offsets_point_into_text():
     assert doc.text == "Jane Doe\n\nEXPERIENCE\nEngineer"
     for ln in doc.lines:
         assert doc.text[ln.start:ln.end] == ln.text
+
+
+def test_finalize_expands_ligatures_and_drops_invisible_chars():
+    doc = Document(source="x", file_type="pdf", extractor="test")
+    doc.lines = [Line("AWS Certi\ufb01ed\u00a0Architect"), Line("Kuber\u00adnetes\u200b"), Line("\u200b")]
+    doc.finalize()
+    assert [ln.text for ln in doc.lines] == ["AWS Certified Architect", "Kubernetes"]
