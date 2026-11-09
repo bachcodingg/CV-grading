@@ -50,6 +50,13 @@ class LLMConfig:
     temperature: float = 0.0
     max_retries: int = field(default_factory=lambda: _env_int("LLM_MAX_RETRIES", 2))
     timeout_s: float = field(default_factory=lambda: _env_float("LLM_TIMEOUT_S", 60.0))
+    # Layers offloaded to the GPU (None = Ollama decides). Tune to stay < 2 GB VRAM.
+    num_gpu: int | None = field(default_factory=lambda: int(v) if (v := _env("LLM_NUM_GPU", "")) else None)
+    # Qwen3-style models "think" by default; that wastes tokens on tiny extraction tasks.
+    think: bool | None = False
+    keep_alive: str = field(default_factory=lambda: _env("LLM_KEEP_ALIVE", "5m"))
+    # The CV must not leave the machine: refuse non-localhost hosts unless explicitly allowed.
+    allow_remote: bool = field(default_factory=lambda: _env_bool("ALLOW_REMOTE_LLM", False))
     # LLM-proposed values must fuzzy-match the source block at least this well.
     min_grounding_score: float = 90.0
 
