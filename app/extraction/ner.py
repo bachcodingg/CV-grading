@@ -119,10 +119,19 @@ def enrich_with_ner(cand: Candidate, doc_text: str, model: EntityModel, cfg: NER
             continue
         header_end = entry.bullets[0].span.start if entry.bullets and entry.bullets[0].span else entry.span.end
         header = doc_text[entry.span.start:header_end]
+        title_sure = entry.title is not None and "title" not in entry.uncertain
         orgs = [e for e in find_entities(model, header, entry.span.start, ["organization"], cfg.threshold)
-                if entry.title is None or e.text not in entry.title]
+                if not (title_sure and e.text in entry.title)]
         if orgs:
             best = max(orgs, key=lambda e: e.score)
+            if entry.title == best.text and "title" in entry.uncertain:
+                # Rules guessed the order backwards: the "title" is the employer.
+                old_org, old_span = entry.org, entry.field_spans.get("org")
+                entry.title = old_org
+                if old_span is not None:
+                    entry.field_spans["title"] = old_span
+                else:
+                    entry.field_spans.pop("title", None)
             entry.org = best.text
             entry.field_spans["org"] = best.span
             entry.provenance["org"] = "ner"

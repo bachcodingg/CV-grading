@@ -91,3 +91,14 @@ def test_plausible_skill(text, ok):
     from app.extraction.ner import plausible_skill
 
     assert plausible_skill(text) is ok
+
+
+def test_ner_fixes_title_org_guessed_backwards():
+    doc = doc_from_text("EXPERIENCE\nContoso\nData wrangler\n2020 – 2023\n- Did things")
+    cand = extract_candidate(doc)
+    job = cand.experience[0]
+    assert (job.title, job.org) == ("Contoso", "Data wrangler") and set(job.uncertain) == {"title", "org"}
+    enrich_with_ner(cand, doc.text, FakeGLiNER(), NERConfig())
+    assert (job.title, job.org) == ("Data wrangler", "Contoso")
+    assert job.uncertain == ["title"]  # still a guess, the LLM may confirm it
+    assert job.field_spans["title"].of(doc.text) == "Data wrangler"
