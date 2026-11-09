@@ -275,3 +275,70 @@ def build_docx(
     d.add_paragraph("AWS Certified Solutions Architect – Associate (2022)")
     d.save(path)
     return path
+
+
+def doc_from_text(text: str, bold: set[str] | None = None):
+    """Build a Document from plain text (one Line per line; blank line = new block)."""
+    from app.ingestion.document import Document, Line
+
+    bold = bold or set()
+    doc = Document(source="text", file_type="pdf", extractor="test")
+    block = 0
+    for raw in text.strip("\n").splitlines():
+        if not raw.strip():
+            block += 1
+            continue
+        doc.lines.append(Line(text=raw.strip(), block=block, bold=raw.strip() in bold))
+    return doc.finalize()
+
+
+VARIED_CV = """
+John Smith
+Austin, TX · john.smith@mail.com · (512) 555-0199 · github.com/jsmith
+
+PROFILE
+Data scientist focused on forecasting and causal inference, with a track record of shipping models to production.
+
+WORK EXPERIENCE
+Data Scientist at Globex Corporation
+Austin, TX | Mar 2022 – Present
+- Built demand forecasting models in Python (Prophet, LightGBM) reducing stockouts by 18%
+- Designed A/B testing framework used by 6 product teams
+
+Initech
+Machine Learning Intern
+Jun 2021 – Aug 2021
+- Prototyped NLP ticket classifier with scikit-learn
+
+2019 – 2021
+Research Assistant, University of Texas at Austin
+Analysed survey data with R and SQL for two published studies.
+
+EDUCATION
+Master of Science in Statistics
+University of Texas at Austin
+Sep 2019 – May 2021
+GPA: 3.9/4.0
+
+Bachelor of Arts in Economics, Rice University, 2015 – 2019, magna cum laude
+
+PROJECTS
+Bike Demand Forecaster (Python, Flask, Docker) | 2023
+- Web app predicting hourly bike rentals
+- Tech: PostgreSQL, Grafana
+
+SKILLS
+• Programming: Python, R, SQL, Scala
+• ML: scikit-learn, PyTorch (intermediate), XGBoost
+• Languages: English (native), Spanish (B2)
+
+CERTIFICATIONS
+Certified Kubernetes Administrator (CKA) – CNCF, 2023
+Google Data Analytics Certificate | Coursera | Jan 2021
+
+VOLUNTEERING
+Mentor at Code Club Austin, 2020 – 2022
+
+PUBLICATIONS
+Smith, J. and Lee, K. (2021). Causal effects of pricing. Journal of Applied Econometrics.
+"""
