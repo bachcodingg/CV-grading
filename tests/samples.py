@@ -177,3 +177,101 @@ def build_icon_pdf(path: Path) -> Path:
     put(page, 50, 160, "Software Engineer at Acme GmbH, 2020 - 2023", 10)
     pdf.save(path)
     return path
+
+
+# ------------------------------------------------------------------- DOCX
+
+
+def _png_bytes(w: int = 120, h: int = 150) -> bytes:
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, w, h), False)
+    pix.clear_with(180)
+    return pix.tobytes("png")
+
+
+def _append_raw_run(paragraph, xml: str) -> None:
+    from docx.oxml import parse_xml
+
+    ns = (
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:v="urn:schemas-microsoft-com:vml"'
+    )
+    paragraph._p.append(parse_xml(f"<w:r {ns}>{xml}</w:r>"))
+
+
+def build_docx(
+    path: Path,
+    *,
+    contact_in_header: bool = False,
+    experience_as_table: bool = False,
+    textbox: bool = False,
+    symbols: bool = False,
+    photo: bool = False,
+) -> Path:
+    import io
+
+    from docx import Document as new_docx
+    from docx.shared import Pt
+
+    d = new_docx()
+    contact = "jane.doe@example.com | +49 151 2345 6789 | linkedin.com/in/janedoe | Munich, Germany"
+    if contact_in_header:
+        d.sections[0].header.paragraphs[0].text = "Jane Doe"
+        d.sections[0].header.add_paragraph(contact)
+    else:
+        d.add_heading("Jane Doe", level=0)
+        p = d.add_paragraph()
+        if symbols:
+            _append_raw_run(p, '<w:sym w:font="Wingdings" w:char="F02A"/>')
+        p.add_run(contact)
+    if photo:
+        d.add_picture(io.BytesIO(_png_bytes()))
+    if textbox:
+        p = d.add_paragraph()
+        _append_raw_run(
+            p,
+            '<w:pict><v:shape style="width:200pt;height:40pt"><v:textbox><w:txbxContent>'
+            "<w:p><w:r><w:t>Open to relocation</w:t></w:r></w:p>"
+            "</w:txbxContent></v:textbox></v:shape></w:pict>",
+        )
+
+    d.add_heading("Summary", level=1)
+    d.add_paragraph("Backend engineer with 5 years of experience building data platforms.")
+
+    d.add_heading("Experience", level=1)
+    jobs = [
+        ("Senior Software Engineer — Acme GmbH", "Jan 2021 – Present",
+         ["Led migration of 40 services to Kubernetes, cutting infra cost by 30%",
+          "Built Python ETL pipelines processing 2 TB per day"]),
+        ("Software Engineer, Beta Corp", "06/2018 – 12/2020",
+         ["Developed REST APIs in Java and Spring Boot", "Mentored 3 junior developers"]),
+    ]
+    if experience_as_table:
+        t = d.add_table(rows=len(jobs), cols=2)
+        for row, (title, dates, bullets) in zip(t.rows, jobs):
+            row.cells[0].text = dates
+            row.cells[1].text = title
+            for b in bullets:
+                row.cells[1].add_paragraph(b, style="List Bullet")
+    else:
+        for title, dates, bullets in jobs:
+            p = d.add_paragraph()
+            run = p.add_run(f"{title}\t{dates}")
+            run.bold = True
+            run.font.size = Pt(11)
+            for b in bullets:
+                d.add_paragraph(b, style="List Bullet")
+
+    d.add_heading("Education", level=1)
+    d.add_paragraph("M.Sc. in Computer Science, Technical University of Munich\t2016 – 2018").runs[0].bold = True
+    d.add_paragraph("Grade: 1.3")
+    d.add_paragraph("B.Sc. Informatics, University of Hamburg\t2013 – 2016").runs[0].bold = True
+
+    d.add_heading("Skills", level=1)
+    d.add_paragraph("Languages: Python, Java, SQL")
+    d.add_paragraph("Tools: Docker, Kubernetes, Terraform, Git")
+    d.add_heading("Languages", level=1)
+    d.add_paragraph("English (C2), German – native")
+    d.add_heading("Certifications", level=1)
+    d.add_paragraph("AWS Certified Solutions Architect – Associate (2022)")
+    d.save(path)
+    return path

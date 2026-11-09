@@ -29,6 +29,7 @@ class Line:
     in_header_footer: bool = False
     in_textbox: bool = False
     style: str | None = None  # DOCX paragraph style name, e.g. "Heading 1"
+    list_item: bool = False  # DOCX numbered/bulleted paragraph (marker not in text)
     ocr: bool = False
     # Filled by Document.finalize():
     start: int = 0
@@ -93,6 +94,10 @@ class Document:
     fonts: list[FontInfo] = field(default_factory=list)
     # Text found in DOCX headers/footers (PDF repeated bands are flagged on lines).
     header_footer_text: list[str] = field(default_factory=list)
+    # DOCX glyphs from symbol fonts (Wingdings, Font Awesome...) via <w:sym>.
+    symbol_glyphs: int = 0
+    # Page count stored by the authoring app (DOCX has no fixed pages).
+    reported_pages: int | None = None
     # Things the extractor noticed but could not fix (e.g. "OCR unavailable").
     notes: list[str] = field(default_factory=list)
     text: str = ""
@@ -120,7 +125,7 @@ class Document:
 
     @property
     def page_count(self) -> int:
-        return len(self.pages)
+        return self.reported_pages or len(self.pages)
 
     def lines_on_page(self, page: int) -> list[Line]:
         return [ln for ln in self.lines if ln.page == page]
