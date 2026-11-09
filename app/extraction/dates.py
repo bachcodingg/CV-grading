@@ -106,8 +106,12 @@ def find_date_range(text: str, offset: int = 0) -> DateRange | None:
             candidates.append((m.start(), DateRange(start=start, end=end, current=current, text=m.group(),
                                                     span=Span(start=offset + m.start(), end=offset + m.end()))))
             break
+    full = candidates[0][1].span if candidates else None
     for rx in (SINCE_RE, OPEN_RE):
         m = rx.search(text)
+        # "from 2019 until 2021" is a full range, not an open-ended "from 2019".
+        if m and full and m.start() < full.end - offset and m.end() > full.start - offset:
+            continue
         if m and (start := parse_date(m.group("start"))) and _valid(start, None):
             candidates.append((m.start(), DateRange(start=start, current=True, text=m.group().strip(),
                                                     span=Span(start=offset + m.start(), end=offset + m.end()))))

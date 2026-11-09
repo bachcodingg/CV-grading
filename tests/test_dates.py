@@ -39,6 +39,7 @@ def test_parse_date_dateparser_fallback():
     ("2020-03 – now", D(year=2020, month=3), None, True),
     ("10/2022 – heute", D(year=2022, month=10), None, True),
     ("M.Sc. (2024 – expected 2026)", D(year=2024), D(year=2026), False),
+    ("from 2019/03 until 2021/07", D(year=2019, month=3), D(year=2021, month=7), False),
 ])
 def test_find_date_range(text, start, end, current):
     r = find_date_range(text)
