@@ -77,10 +77,24 @@ class NERConfig:
 
 
 @dataclass(frozen=True)
+class PrivacyConfig:
+    # Optional Presidio + spaCy pass (CPU) on top of the rule-based detectors.
+    presidio_enabled: bool = field(default_factory=lambda: _env_bool("PRESIDIO_ENABLED", False))
+    spacy_model: str = field(default_factory=lambda: _env("SPACY_MODEL", "en_core_web_lg"))
+    presidio_threshold: float = field(default_factory=lambda: _env_float("PRESIDIO_THRESHOLD", 0.6))
+    # An image at least this big (pt) with a portrait/square shape on page 1 is treated as a photo.
+    photo_min_side: float = 40.0
+    photo_max_side: float = 300.0
+    # Jobs that started this many years ago or earlier are reported as an age signal.
+    old_experience_years: int = 20
+
+
+@dataclass(frozen=True)
 class Config:
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     ner: NERConfig = field(default_factory=NERConfig)
+    privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
 
 
 def get_config() -> Config:
