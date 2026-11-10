@@ -11,6 +11,7 @@ dependencies = [
     "dateparser>=1.2",
     "pydantic>=2.7",
     "rapidfuzz>=3.9",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.matching" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,245 @@
+# Canonical skill name -> aliases (PLAN.md §3 [5] step 2).
+#
+# Used by the JD parser (keywords for the ATS coverage check) and by the matcher
+# (exact + alias matching). Matching is case-insensitive and respects token
+# boundaries ("C" does not match inside "C-level", "Java" not inside "JavaScript").
+# Names that are also ordinary English words are listed under `case_sensitive`
+# and only match as written ("Go", not "go"; "React", not "react").
+#
+# Keep entries to concrete, checkable skills. Soft skills live in jd_parser.py.
+
+skills:
+  # Programming languages
+  Python: [python3]
+  Java: []
+  JavaScript: [js, ecmascript, es6]
+  TypeScript: []
+  C: []
+  C++: [cpp, c plus plus]
+  C#: [csharp, c sharp]
+  Go: [golang]
+  Rust: []
+  Kotlin: []
+  Swift: []
+  Objective-C: [objc]
+  Scala: []
+  Ruby: []
+  PHP: []
+  Perl: []
+  R: []
+  MATLAB: []
+  Julia: []
+  Dart: []
+  Haskell: []
+  Elixir: []
+  Erlang: []
+  Lua: []
+  Fortran: []
+  COBOL: []
+  Assembly: [assembler]
+  Bash: [shell scripting, shell script, shell scripts]
+  PowerShell: []
+  SQL: []
+  PL/SQL: [plsql]
+  T-SQL: [tsql]
+  HTML: [html5]
+  CSS: [css3]
+  Sass: [scss]
+  VHDL: []
+  Verilog: [systemverilog]
+  Solidity: []
+  ABAP: []
+
+  # Web / backend frameworks
+  React: [react.js, reactjs]
+  React Native: []
+  Angular: [angularjs, angular.js]
+  Vue.js: [vue, vuejs]
+  Svelte: []
+  Next.js: [nextjs]
+  Node.js: [Node, nodejs]
+  Express: [express.js, expressjs]
+  NestJS: [nest.js]
+  Django: []
+  Flask: []
+  FastAPI: []
+  Spring: [spring framework]
+  Spring Boot: [springboot]
+  Hibernate: []
+  .NET: [dotnet, .net core, asp.net, asp.net core]
+  Ruby on Rails: [Rails, RoR]
+  Laravel: []
+  Symfony: []
+  jQuery: []
+  Tailwind CSS: [tailwind, tailwindcss]
+  Bootstrap: []
+  Redux: []
+  GraphQL: []
+  REST: [rest api, rest apis, restful, restful apis, restful services]
+  gRPC: []
+  WebSockets: [websocket]
+  Flutter: []
+  Qt: []
+  Unity: []
+  Unreal Engine: [unreal]
+
+  # Data / ML
+  pandas: []
+  NumPy: []
+  SciPy: []
+  scikit-learn: [sklearn, scikit learn]
+  PyTorch: [torch]
+  TensorFlow: []
+  Keras: []
+  JAX: []
+  Hugging Face: [huggingface, hugging face transformers]
+  LangChain: []
+  OpenCV: []
+  spaCy: []
+  NLTK: []
+  XGBoost: []
+  LightGBM: []
+  Jupyter: [jupyter notebook, jupyter notebooks, jupyterlab]
+  Apache Spark: [spark, pyspark]
+  Hadoop: [apache hadoop]
+  Hive: [apache hive]
+  Apache Kafka: [kafka]
+  Apache Flink: [flink]
+  Apache Airflow: [airflow]
+  dbt: []
+  Databricks: []
+  Snowflake: []
+  BigQuery: [google bigquery]
+  Redshift: [amazon redshift]
+  Tableau: []
+  Power BI: [powerbi]
+  Looker: []
+  Excel: [microsoft excel, ms excel]
+  Machine Learning: [ML]
+  Deep Learning: []
+  Natural Language Processing: [nlp]
+  Computer Vision: []
+  Large Language Models: [llm, llms]
+  Reinforcement Learning: []
+  MLOps: []
+  ETL: [elt]
+  Data Warehousing: [data warehouse]
+  Statistics: [statistical analysis]
+  A/B Testing: [ab testing, a/b tests, split testing]
+
+  # Databases
+  PostgreSQL: [postgres, postgre sql, psql]
+  MySQL: []
+  MariaDB: []
+  SQLite: []
+  Oracle Database: [oracle db]
+  Microsoft SQL Server: [sql server, mssql, ms sql]
+  MongoDB: [mongo]
+  Redis: []
+  Cassandra: [apache cassandra]
+  Elasticsearch: [elastic search, elk, opensearch]
+  DynamoDB: []
+  Neo4j: []
+  NoSQL: []
+
+  # Cloud / DevOps
+  AWS: [amazon web services]
+  Microsoft Azure: [azure]
+  Google Cloud: [gcp, google cloud platform]
+  Docker: [containerization, containerisation]
+  Kubernetes: [k8s, kube]
+  Helm: []
+  OpenShift: []
+  Terraform: []
+  Ansible: []
+  Puppet: []
+  Chef: []
+  Jenkins: []
+  GitHub Actions: []
+  GitLab CI: [gitlab ci/cd]
+  CircleCI: []
+  CI/CD: [ci / cd, ci-cd, continuous integration, continuous delivery, continuous deployment]
+  Git: [github, gitlab, bitbucket]
+  Linux: [unix, ubuntu, debian, red hat linux, rhel]
+  Prometheus: []
+  Grafana: []
+  Datadog: []
+  Nginx: []
+  Serverless: [aws lambda, lambda functions]
+  Microservices: [microservice, micro-services, microservice architecture]
+  Infrastructure as Code: [iac]
+  DevOps: []
+  SRE: [site reliability engineering]
+
+  # Practices / methods
+  Agile: [agile methodologies]
+  Scrum: []
+  Kanban: []
+  Test-Driven Development: [tdd]
+  Unit Testing: [unit tests]
+  Object-Oriented Programming: [oop, object oriented programming, object-oriented design]
+  Design Patterns: []
+  System Design: []
+  Distributed Systems: []
+  Data Structures: [data structures and algorithms]
+  Embedded Systems: [embedded software, embedded c]
+  ROS: [robot operating system, ros2]
+  Security: [cybersecurity, cyber security, information security, infosec]
+  Penetration Testing: [pentesting, pen testing]
+
+  # Tools / business software
+  Jira: []
+  Confluence: []
+  Figma: []
+  Sketch: []
+  Adobe Photoshop: [photoshop]
+  Adobe Illustrator: [illustrator]
+  SAP: []
+  Salesforce: []
+  HubSpot: []
+  Google Analytics: []
+  SEO: [search engine optimization]
+  AutoCAD: []
+  SolidWorks: []
+  CATIA: []
+  Simulink: []
+  LabVIEW: []
+  Microsoft Office: [ms office, office 365, microsoft 365]
+  LaTeX: []
+
+case_sensitive:
+  - Go
+  - C
+  - R
+  - Rust
+  - Swift
+  - Ruby
+  - Dart
+  - Julia
+  - Spring
+  - Express
+  - React
+  - Unity
+  - Flask
+  - Spark
+  - Hive
+  - Chef
+  - Puppet
+  - Helm
+  - Looker
+  - Excel
+  - Sketch
+  - Snowflake
+  - Bootstrap
+  - Assembly
+  - REST
+  - Node
+  - Rails
+  - RoR
+  - ML
+  - Lua
+  - Perl
+  - Elixir
+  - Unreal
+  - Illustrator
+  - Serverless
