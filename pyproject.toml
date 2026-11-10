@@ -18,6 +18,9 @@ dependencies = [
 ner = ["gliner>=0.2"]
 # Local LLM gap-filling through Ollama.
 llm = ["ollama>=0.4"]
+# Model-based personal-data detection for redaction (CPU). Also needs a spaCy model:
+#   python -m spacy download en_core_web_lg
+privacy = ["presidio-analyzer>=2.2"]
 # OCR for scanned PDFs. Also needs the Tesseract binary on PATH.
 ocr = ["pytesseract>=0.3", "pillow>=10"]
 dev = ["pytest>=8"]
@@ -35,5 +38,5 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: needs downloaded models (GLiNER) or a running Ollama server",
+    "slow: needs downloaded models (GLiNER, spaCy) or a running Ollama server",
 ]
