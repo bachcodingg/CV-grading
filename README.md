@@ -3,9 +3,9 @@
 A local, privacy-first tool that grades a CV against a job posting. The CV never leaves your machine.
 See [PLAN.md](PLAN.md) for the full design.
 
-**Status:** components **[1] Ingestion + parse-check**, **[2] CV Structurer** and
-**[3] Redaction + bias-exposure scan** are implemented.
-JD parsing, matching, scoring and the coach (components [4]–[9]) are next.
+**Status:** components **[1] Ingestion + parse-check**, **[2] CV Structurer**,
+**[3] Redaction + bias-exposure scan** and **[4] JD Parser** are implemented.
+Matching, scoring and the coach (components [5]–[9]) are next.
 
 ## What works today
 
@@ -69,6 +69,34 @@ status in a personal-details block (not in "single-page app"), and ".NET" in job
 **Presidio + spaCy** (optional, CPU) adds other people's names (referees) and origin/religious groups in
 free text; it is never run for person names on experience or skills text.
 
+### [4] JD Parser (`app/extraction/jd_parser.py`)
+A pasted job posting becomes numbered, **atomic requirements**:
+
+```
+Requirement { id, text, category: skill|experience|education|certification|soft_skill|language|other,
+              priority: must|should|nice, priority_source: cue|section|default|user, priority_cue,
+              min_years, degree_level, languages, language_level, keywords[], any_of, span }
+```
+
+1. **Sections** by heading ("What you'll bring", "Your profile", "Nice to have", "Preferred qualifications",
+   "Responsibilities", "Tech stack", "Benefits", "About us", ...). Requirement sections set a default priority
+   (must / should / nice); benefits and company blurbs are ignored. Postings without headings are read sentence by
+   sentence, keeping sentences that read like requirements.
+2. **Atomic splitting**: a bullet is cut where its clauses ask for different things or carry different priorities:
+   "Excellent communication skills and fluency in English (C1); German is a plus" → soft skill (must),
+   English C1 (must), German (nice). "Knowledge of PostgreSQL and Redis" stays one requirement.
+3. **In code, per requirement**: category; **priority from wording** ("required", "is a plus", "preferred",
+   "a strong plus", "not required"), which overrides the section default; minimum years ("3–5 years",
+   "at least two years", "6 months"); lowest accepted degree; spoken languages and CEFR level; keywords and
+   whether they are alternatives ("AWS, GCP or Azure", "e.g.").
+4. **Keywords** come from a curated vocabulary (`app/matching/skills_aliases.yaml`, ~180 skills with aliases such
+   as K8s → Kubernetes, case-aware so "react quickly" or "the rest of the team" do not count) plus tech-looking
+   terms (gRPC, S3, OAuth2). The posting's keyword list (verbatim, in order) feeds the ATS coverage check.
+5. **Optional models**: GLiNER adds unknown skills; the local LLM classifies requirements the rules could not and
+   splits very long ones. Every LLM part must be verbatim posting text or it is discarded.
+
+The user can change any priority (`JobPosting.set_priority`, or `--priority R3=nice` on the command line).
+
 ## Setup
 
 ```bash
@@ -95,6 +123,8 @@ cv-analyzer structure my_cv.docx          # structured CV summary
 cv-analyzer privacy my_cv.pdf             # bias-exposure scan + redacted copy the grader sees
 cv-analyzer analyze my_cv.pdf --ner       # all three, with GLiNER enrichment
 cv-analyzer structure my_cv.pdf --json    # machine-readable Candidate JSON
+cv-analyzer jd posting.txt                # requirements from a pasted job posting
+cv-analyzer jd - --priority R3=nice < posting.txt --json   # from stdin, with a priority override
 ```
 
 ```python
@@ -112,6 +142,12 @@ priv = analyze_privacy(doc, candidate)    # one detection pass
 print(priv.exposure.format())             # what a screener could react to
 grader_text = priv.redacted.text          # placeholders instead of personal data
 priv.redacted.original_of(span)           # map a redacted span back to the user's own text
+
+from app.extraction.jd_parser import parse_job_posting
+job = parse_job_posting(open("posting.txt").read(), use_llm=False)
+for r in job.requirements:
+    print(r.id, r.priority, r.category, r.text, [k.canonical or k.text for k in r.keywords])
+job.set_priority("R3", "nice")            # the user knows better
 ```
 
 ## Configuration
@@ -120,7 +156,7 @@ Model names and thresholds live in `app/config.py` and can be overridden with `C
 
 | Variable | Default | |
 |---|---|---|
-| `CVA_LLM_ENABLED` | `1` | use Ollama gap-filling when reachable |
+| `CVA_LLM_ENABLED` | `1` | use Ollama gap-filling / JD refinement when reachable |
 | `CVA_LLM_MODEL` | `qwen3:1.7b` | any pulled Ollama model |
 | `CVA_OLLAMA_HOST` | `http://127.0.0.1:11434` | non-local hosts are refused… |
 | `CVA_ALLOW_REMOTE_LLM` | `0` | …unless this is set |
@@ -146,7 +182,8 @@ app/
   patterns.py            shared email / phone / URL / icon regexes
   cli.py                 cv-analyzer command
   ingestion/             document.py, layout.py, pdf.py, docx.py, parse_check.py
-  extraction/            schemas.py, sections.py, dates.py, cv_extractor.py, ner.py, gap_fill.py
+  extraction/            schemas.py, sections.py, dates.py, cv_extractor.py, ner.py, gap_fill.py, jd_parser.py
+  matching/              skills_aliases.yaml (skill vocabulary), skills.py
   privacy/               detectors.py, redactor.py, bias_exposure.py, presidio.py
   llm/                   client.py (Ollama), prompts.py
 tests/                   pytest suite + synthetic CV builders (samples.py)
