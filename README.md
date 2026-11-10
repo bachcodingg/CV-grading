@@ -3,8 +3,9 @@
 A local, privacy-first tool that grades a CV against a job posting. The CV never leaves your machine.
 See [PLAN.md](PLAN.md) for the full design.
 
-**Status:** components **[1] Ingestion + parse-check** and **[2] CV Structurer** are implemented.
-Redaction, JD parsing, matching, scoring and the coach (components [3]–[9]) are next.
+**Status:** components **[1] Ingestion + parse-check**, **[2] CV Structurer** and
+**[3] Redaction + bias-exposure scan** are implemented.
+JD parsing, matching, scoring and the coach (components [4]–[9]) are next.
 
 ## What works today
 
@@ -42,6 +43,32 @@ Rules first, models only for what is left:
 Every extracted value keeps its **character span** in the extracted text and its **provenance**
 (`rules` / `ner` / `llm`); fallback guesses are marked `uncertain`.
 
+### [3] Redaction + bias-exposure scan (`app/privacy/`)
+One detection pass, two outputs:
+
+- **Redacted copy for the grader.** Name (everywhere it appears, including publication author lists), email,
+  phone, links, address/location, date of birth, age, place of birth, gender markers and pronouns,
+  nationality and origin groups, marital status, children and religion are replaced by **fixed placeholders**
+  (`[NAME]`, `[DATE OF BIRTH]`, …). The placeholders do not depend on the value, so two CVs that differ only
+  in name, gender, age or origin redact to the **same text** (tested). Offsets are mapped back, so evidence
+  found in the redacted text can be quoted from the user's original CV. A redacted `Candidate` is built too.
+- **Bias-exposure scan for the user** (information only, the user decides):
+
+  | Code | Severity | Found |
+  |---|---|---|
+  | `PHOTO` | warning | portrait-shaped image on page 1 |
+  | `DATE_OF_BIRTH`, `AGE`, `PLACE_OF_BIRTH` | warning | "Date of birth: …", "Born 1990 in …", "31 years old" |
+  | `NATIONALITY`, `ETHNICITY` | warning | "Nationality: …", "US citizen", "dual citizenship" |
+  | `MARITAL_STATUS`, `CHILDREN`, `RELIGION`, `GENDER` | warning | labelled personal fields, "mother of two" |
+  | `ORIGIN_GROUP`, `RELIGIOUS_AFFILIATION` | info | "Vietnamese Students' Association", "church choir" |
+  | `SALUTATION`, `PRONOUNS`, `THIRD_PERSON`, `GENDER_CODED_WORDS` | info | "Ms.", "(she/her)", "She has…", "women's" |
+  | `FULL_ADDRESS`, `SCHOOL_DATES`, `OLD_EXPERIENCE` | info | street address, Abitur/high-school dates, 20+ year old roles |
+
+Rules are context-aware: "German" in the languages section stays a skill, "single" only counts as a marital
+status in a personal-details block (not in "single-page app"), and ".NET" in job text is not a link.
+**Presidio + spaCy** (optional, CPU) adds other people's names (referees) and origin/religious groups in
+free text; it is never run for person names on experience or skills text.
+
 ## Setup
 
 ```bash
@@ -51,6 +78,8 @@ pip install -e ".[dev]"           # core + tests
 pip install -e ".[ner]"           # optional: GLiNER (pulls PyTorch; install the CPU wheel first:
                                   #   pip install torch --index-url https://download.pytorch.org/whl/cpu)
 pip install -e ".[llm]"           # optional: Ollama client
+pip install -e ".[privacy]"       # optional: Presidio for redaction, then:
+                                  #   python -m spacy download en_core_web_lg
 pip install -e ".[ocr]"           # optional: OCR (also needs the Tesseract binary on PATH)
 ```
 
@@ -63,7 +92,8 @@ e.g. `ollama pull qwen3:1.7b`. Recommended server settings for the 2 GB VRAM bud
 ```bash
 cv-analyzer check my_cv.pdf               # parse-check + parser view
 cv-analyzer structure my_cv.docx          # structured CV summary
-cv-analyzer analyze my_cv.pdf --ner       # both, with GLiNER enrichment
+cv-analyzer privacy my_cv.pdf             # bias-exposure scan + redacted copy the grader sees
+cv-analyzer analyze my_cv.pdf --ner       # all three, with GLiNER enrichment
 cv-analyzer structure my_cv.pdf --json    # machine-readable Candidate JSON
 ```
 
@@ -76,6 +106,12 @@ doc = load_document("my_cv.pdf")          # path or uploaded bytes
 print(check_document(doc).format())
 candidate = structure_cv(doc, use_llm=False)
 print(candidate.years_of_experience, candidate.skill_names())
+
+from app.privacy import analyze_privacy
+priv = analyze_privacy(doc, candidate)    # one detection pass
+print(priv.exposure.format())             # what a screener could react to
+grader_text = priv.redacted.text          # placeholders instead of personal data
+priv.redacted.original_of(span)           # map a redacted span back to the user's own text
 ```
 
 ## Configuration
@@ -91,12 +127,15 @@ Model names and thresholds live in `app/config.py` and can be overridden with `C
 | `CVA_LLM_NUM_CTX` / `CVA_LLM_NUM_GPU` | `2048` / auto | VRAM tuning |
 | `CVA_NER_ENABLED` | `0` | run GLiNER by default |
 | `CVA_NER_MODEL` | `urchade/gliner_small-v2.1` | |
+| `CVA_PRESIDIO_ENABLED` | `0` | run Presidio + spaCy during redaction |
+| `CVA_SPACY_MODEL` | `en_core_web_lg` | spaCy model used by Presidio |
+| `CVA_PRESIDIO_THRESHOLD` | `0.6` | minimum Presidio score |
 
 ## Tests
 
 ```bash
 pytest -m "not slow"     # fast suite; sample CVs are generated at test time (no real personal data)
-pytest -m slow           # also runs the real GLiNER model (downloads it once)
+pytest -m slow           # also runs the real GLiNER model (downloads it once) and Presidio, if installed
 ```
 
 ## Layout
@@ -108,6 +147,7 @@ app/
   cli.py                 cv-analyzer command
   ingestion/             document.py, layout.py, pdf.py, docx.py, parse_check.py
   extraction/            schemas.py, sections.py, dates.py, cv_extractor.py, ner.py, gap_fill.py
+  privacy/               detectors.py, redactor.py, bias_exposure.py, presidio.py
   llm/                   client.py (Ollama), prompts.py
 tests/                   pytest suite + synthetic CV builders (samples.py)
 ```
