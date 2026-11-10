@@ -23,3 +23,21 @@ Return the degree, the field of study, the institution, and the start and end da
 
 Example entry: "Bachelor in Physics — Uni Wien (2015-2018)"
 Example answer: {{"degree": "Bachelor", "field": "Physics", "institution": "Uni Wien", "start": "2015", "end": "2018"}}"""
+
+JD_SYSTEM = (
+    "You analyse one requirement from a job posting. Copy text exactly as written. "
+    "Never invent, translate or reformat. Reply with JSON only."
+)
+
+JD_REFINE = """Requirement from a job posting:
+<<<
+{requirement}
+>>>
+1. "category": what the requirement asks for. One of: skill (a tool, technology or method), experience
+   (work experience, often with years), education (a degree or field of study), certification,
+   soft_skill (communication, teamwork, ...), language (a spoken language), other.
+2. "parts": if it asks for several different things, copy each separate requirement exactly as written;
+   otherwise return an empty list.
+
+Example requirement: "Degree in Computer Science and strong communication skills"
+Example answer: {{"category": "education", "parts": ["Degree in Computer Science", "strong communication skills"]}}"""

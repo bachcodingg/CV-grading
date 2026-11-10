@@ -148,3 +148,67 @@ class Candidate(BaseModel):
 
     def skill_names(self) -> list[str]:
         return [s.name for s in self.skills]
+
+
+# ---------------------------------------------------------------- job posting (PLAN.md §3 [4])
+
+Category = Literal["skill", "experience", "education", "certification", "soft_skill", "language", "other"]
+Priority = Literal["must", "should", "nice"]
+PrioritySource = Literal["cue", "section", "default", "user"]
+DegreeLevel = Literal["bachelor", "master", "phd"]
+
+
+class JDKeyword(BaseModel):
+    """A term from the posting, used for matching and the ATS coverage check."""
+
+    text: str  # verbatim, as written in the posting
+    canonical: str | None = None  # vocabulary name ("K8s" -> "Kubernetes"); None = not in the vocabulary
+    span: Span
+    source: Literal["vocab", "pattern", "ner"] = "vocab"
+
+    @property
+    def key(self) -> str:
+        return (self.canonical or self.text).lower()
+
+
+class Requirement(Sourced):
+    id: str  # "R1", "R2", ... stable within one posting
+    text: str
+    category: Category
+    priority: Priority
+    priority_source: PrioritySource = "default"
+    priority_cue: str | None = None  # the wording that decided the priority ("nice to have")
+    min_years: float | None = None
+    degree_level: DegreeLevel | None = None  # lowest degree the requirement accepts
+    languages: list[str] = Field(default_factory=list)  # spoken languages, e.g. ["German"]
+    language_level: str | None = None  # "C1", "fluent", "native", ...
+    keywords: list[JDKeyword] = Field(default_factory=list)
+    any_of: bool = False  # keywords are alternatives ("Python or Go", "e.g. AWS, GCP")
+    section: str = ""  # heading the requirement appeared under
+
+
+class JobPosting(BaseModel):
+    text: str  # the cleaned posting text; every span refers to it
+    title: str | None = None
+    requirements: list[Requirement] = Field(default_factory=list)
+    responsibilities: list[Bullet] = Field(default_factory=list)
+    # Distinct terms from requirements, responsibilities and tech-stack sections (first mention each).
+    keywords: list[JDKeyword] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    def requirement(self, req_id: str) -> Requirement:
+        for r in self.requirements:
+            if r.id.lower() == req_id.lower():
+                return r
+        raise KeyError(req_id)
+
+    def set_priority(self, req_id: str, priority: Priority) -> Requirement:
+        """The user overrides a priority (PLAN.md §3 [4]: 'user can edit priority')."""
+        req = self.requirement(req_id)
+        req.priority = priority
+        req.priority_source = "user"
+        req.priority_cue = None
+        return req
+
+    def by_priority(self, priority: Priority) -> list[Requirement]:
+        return [r for r in self.requirements if r.priority == priority]
