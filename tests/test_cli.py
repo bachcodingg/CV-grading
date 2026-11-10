@@ -25,6 +25,21 @@ def test_structure_json(plain_docx, capsys):
     assert data["experience"][0]["org"] == "Acme GmbH"
 
 
+def test_privacy_json(tricky_docx, capsys):
+    assert main(["privacy", str(tricky_docx), "--json", "--no-llm"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert "PHOTO" in {f["code"] for f in data["bias_exposure"]["findings"]}
+    assert "jane.doe@example.com" not in data["redacted_text"]
+    assert "[EMAIL]" in data["redacted_text"]
+
+
+def test_analyze_includes_bias_scan(single_column_pdf, capsys):
+    assert main(["analyze", str(single_column_pdf), "--no-llm", "--no-text"]) == 0
+    out = capsys.readouterr().out
+    assert "Bias-exposure scan" in out
+    assert "What the grader sees" not in out
+
+
 def test_bad_input_returns_error_code(tmp_path, capsys):
     bad = tmp_path / "cv.txt"
     bad.write_text("hello")

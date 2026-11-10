@@ -2,7 +2,8 @@
 
     cv-analyzer check CV.pdf            parse-check report + parser view
     cv-analyzer structure CV.docx       structured CV (add --json for machine output)
-    cv-analyzer analyze CV.pdf          both
+    cv-analyzer privacy CV.pdf          bias-exposure scan + the redacted copy the grader sees
+    cv-analyzer analyze CV.pdf          all of the above
 
 Everything runs locally. CV text is printed to your terminal only.
 """
@@ -20,6 +21,7 @@ from app.extraction import structure_cv
 from app.extraction.schemas import Candidate
 from app.ingestion import load_document
 from app.ingestion.parse_check import check_document
+from app.privacy import analyze_privacy
 
 
 def _fmt_range(e) -> str:
@@ -92,12 +94,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cv-analyzer", description="Local CV parse-check and structurer.")
     sub = parser.add_subparsers(dest="command", required=True)
     for name, help_ in (("check", "parse-check report"), ("structure", "structured CV"),
-                        ("analyze", "parse-check + structured CV")):
+                        ("privacy", "bias-exposure scan + redacted copy"),
+                        ("analyze", "parse-check + structured CV + bias-exposure scan")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("cv", type=Path, help="CV file (PDF or DOCX)")
         p.add_argument("--json", action="store_true", help="print JSON instead of text")
         if name != "structure":
-            p.add_argument("--no-text", action="store_true", help="hide the extracted parser view")
+            p.add_argument("--no-text", action="store_true", help="hide the extracted / redacted text")
+        if name in ("privacy", "analyze"):
+            p.add_argument("--presidio", action="store_true", help="also run Presidio + spaCy (CPU)")
         if name != "check":
             p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
             p.add_argument("--no-llm", action="store_true", help="skip local LLM gap-filling")
@@ -121,11 +126,23 @@ def main(argv: list[str] | None = None) -> int:
         report = check_document(doc)
         result["parse_check"] = report.to_dict()
         text_out.append(report.format(show_text=not args.no_text))
-    if args.command in ("structure", "analyze"):
+    if args.command != "check":
         cand = structure_cv(doc, use_ner=args.ner or None, use_llm=False if args.no_llm else None,
                             today=args.today)
+    if args.command in ("structure", "analyze"):
         result["candidate"] = cand.model_dump(mode="json")
         text_out.append(format_candidate(cand))
+    if args.command in ("privacy", "analyze"):
+        priv = analyze_privacy(doc, cand, use_presidio=args.presidio or None, today=args.today)
+        result["bias_exposure"] = priv.exposure.to_dict()
+        result["redacted_text"] = priv.redacted.text
+        text_out.append(priv.exposure.format())
+        if priv.redacted.warnings:
+            text_out.append("\n".join(f"  ! {w}" for w in priv.redacted.warnings))
+        if not args.no_text:
+            counts = ", ".join(f"{k} ×{v}" for k, v in sorted(priv.redacted.counts().items())) or "nothing"
+            photo = "; photo dropped" if priv.redacted.photo_removed else ""
+            text_out.append(f"─── What the grader sees (redacted: {counts}{photo}) ───\n{priv.redacted.text}")
 
     if args.json:
         if args.command in ("check", "structure"):
