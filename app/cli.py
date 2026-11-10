@@ -4,6 +4,7 @@
     cv-analyzer structure CV.docx       structured CV (add --json for machine output)
     cv-analyzer privacy CV.pdf          bias-exposure scan + the redacted copy the grader sees
     cv-analyzer analyze CV.pdf          all of the above
+    cv-analyzer jd posting.txt          requirements from a job posting (use - for stdin)
 
 Everything runs locally. CV text is printed to your terminal only.
 """
@@ -18,6 +19,7 @@ from datetime import date
 from pathlib import Path
 
 from app.extraction import structure_cv
+from app.extraction.jd_parser import format_posting, parse_job_posting
 from app.extraction.schemas import Candidate
 from app.ingestion import load_document
 from app.ingestion.parse_check import check_document
@@ -107,12 +109,23 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
             p.add_argument("--no-llm", action="store_true", help="skip local LLM gap-filling")
             p.add_argument("--today", type=date.fromisoformat, help="reference date for 'present' (YYYY-MM-DD)")
+        p.add_argument("-v", "--verbose", action="store_true")
+    p = sub.add_parser("jd", help="requirements from a job posting")
+    p.add_argument("posting", help="text file with the pasted posting, or - for stdin")
+    p.add_argument("--json", action="store_true", help="print JSON instead of text")
+    p.add_argument("--priority", action="append", default=[], metavar="ID=PRIORITY",
+                   help="override a priority, e.g. --priority R3=nice (repeatable)")
+    p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
+    p.add_argument("--no-llm", action="store_true", help="skip local LLM refinement")
     p.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(level=logging.INFO if getattr(args, "verbose", False) else logging.WARNING)
+
+    if args.command == "jd":
+        return _jd(args)
 
     try:
         doc = load_document(args.cv)
@@ -150,6 +163,36 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print("\n\n".join(text_out))
+    return 0
+
+
+def _jd(args) -> int:
+    try:
+        if args.posting == "-":
+            text = sys.stdin.read()
+        else:
+            text = Path(args.posting).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not text.strip():
+        print("error: the job posting is empty", file=sys.stderr)
+        return 2
+    posting = parse_job_posting(text, use_ner=args.ner or None, use_llm=False if args.no_llm else None)
+    for override in args.priority:
+        req_id, _, prio = override.partition("=")
+        if prio not in ("must", "should", "nice"):
+            print(f"error: --priority {override!r}: use ID=must|should|nice", file=sys.stderr)
+            return 2
+        try:
+            posting.set_priority(req_id.strip(), prio)
+        except KeyError:
+            print(f"error: --priority {override!r}: no requirement {req_id!r}", file=sys.stderr)
+            return 2
+    if args.json:
+        print(json.dumps(posting.model_dump(mode="json", exclude={"text"}), indent=2, ensure_ascii=False))
+    else:
+        print(format_posting(posting))
     return 0
 
 

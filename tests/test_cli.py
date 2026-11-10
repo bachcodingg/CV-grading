@@ -45,3 +45,38 @@ def test_bad_input_returns_error_code(tmp_path, capsys):
     bad.write_text("hello")
     assert main(["check", str(bad)]) == 2
     assert "unsupported" in capsys.readouterr().err
+
+
+POSTING = """Data Engineer
+Requirements:
+- 3+ years of experience with Python
+- Knowledge of Airflow is a plus
+"""
+
+
+def test_jd_text_output(tmp_path, capsys):
+    f = tmp_path / "jd.txt"
+    f.write_text(POSTING, encoding="utf-8")
+    assert main(["jd", str(f), "--no-llm"]) == 0
+    out = capsys.readouterr().out
+    assert "Job posting: Data Engineer" in out
+    assert "R1  [experience] 3+ years of experience with Python" in out
+    assert '← "is a plus"' in out
+
+
+def test_jd_json_with_priority_override(tmp_path, capsys):
+    f = tmp_path / "jd.txt"
+    f.write_text(POSTING, encoding="utf-8")
+    assert main(["jd", str(f), "--no-llm", "--json", "--priority", "R2=must"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    r2 = data["requirements"][1]
+    assert (r2["priority"], r2["priority_source"]) == ("must", "user")
+    assert [k["canonical"] for k in data["keywords"]] == ["Python", "Apache Airflow"]
+
+
+def test_jd_from_stdin_and_bad_override(monkeypatch, capsys):
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(POSTING))
+    assert main(["jd", "-", "--no-llm", "--priority", "R9=must"]) == 2
+    assert "no requirement 'R9'" in capsys.readouterr().err
