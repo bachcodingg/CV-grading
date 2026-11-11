@@ -4,8 +4,8 @@ A local, privacy-first tool that grades a CV against a job posting. The CV never
 See [PLAN.md](PLAN.md) for the full design.
 
 **Status:** components **[1] Ingestion + parse-check**, **[2] CV Structurer**,
-**[3] Redaction + bias-exposure scan** and **[4] JD Parser** are implemented.
-Matching, scoring and the coach (components [5]–[9]) are next.
+**[3] Redaction + bias-exposure scan**, **[4] JD Parser** and **[5] Matcher** are implemented.
+Evidence verifier, scoring and the coach (components [6]–[9]) are next.
 
 ## What works today
 
@@ -97,6 +97,27 @@ Requirement { id, text, category: skill|experience|education|certification|soft_
 
 The user can change any priority (`JobPosting.set_priority`, or `--priority R3=nice` on the command line).
 
+### [5] Matcher (`app/matching/`)
+Each requirement is matched against the **redacted** CV, cheapest step first:
+
+1. **Chunks**: the CV is cut into numbered evidence chunks (one bullet, job header, education entry, skills line,
+   certificate). Chunk text is the redacted copy; the span points into the original CV for quoting.
+2. **Deterministic checks** in code: years of experience (in total, or only in jobs that mention the keywords),
+   degree level and field of study (small synonym list: Informatics = Computer Science), spoken languages and
+   CEFR levels, certificate names (fuzzy). A check either decides the requirement or sets a **cap** the judge
+   cannot exceed (2 of 5 years can never "meet").
+3. **Keyword + alias**: posting keywords looked up by canonical name (CV "K8s" satisfies "Kubernetes"), with
+   `verbatim` recorded for the ATS check. Plain skill requirements with clear evidence are decided here;
+   "strong", "expert", years etc. go on to the judge.
+4. **Retrieval**: lexical (idf-weighted, alias-aware, no models) or, with `--models`, `bge-small-en-v1.5`
+   embeddings + `bge-reranker-base` on the CPU. Up to 3 candidate chunks per requirement.
+5. **LLM judge** (Ollama, one requirement per call): returns a label (`none|tangential|partial|meets|exceeds`,
+   rating 0–4 in code) and excerpt **numbers**, not quotes. Unknown numbers are dropped; a positive label
+   with no valid excerpt is not used ("no evidence, no points").
+
+Without a judge, undecided requirements get a cautious `low`-confidence label; retrieval alone never earns
+more than "partial". Not yet included: the optional NLI pre-check and careful mode (PLAN.md M5).
+
 ## Setup
 
 ```bash
@@ -108,6 +129,7 @@ pip install -e ".[ner]"           # optional: GLiNER (pulls PyTorch; install the
 pip install -e ".[llm]"           # optional: Ollama client
 pip install -e ".[privacy]"       # optional: Presidio for redaction, then:
                                   #   python -m spacy download en_core_web_lg
+pip install -e ".[matching]"      # optional: CPU embeddings + reranker (sentence-transformers)
 pip install -e ".[ocr]"           # optional: OCR (also needs the Tesseract binary on PATH)
 ```
 
@@ -125,6 +147,7 @@ cv-analyzer analyze my_cv.pdf --ner       # all three, with GLiNER enrichment
 cv-analyzer structure my_cv.pdf --json    # machine-readable Candidate JSON
 cv-analyzer jd posting.txt                # requirements from a pasted job posting
 cv-analyzer jd - --priority R3=nice < posting.txt --json   # from stdin, with a priority override
+cv-analyzer match my_cv.pdf posting.txt   # requirement-by-requirement evidence (add --models, --json)
 ```
 
 ```python
@@ -166,6 +189,10 @@ Model names and thresholds live in `app/config.py` and can be overridden with `C
 | `CVA_PRESIDIO_ENABLED` | `0` | run Presidio + spaCy during redaction |
 | `CVA_SPACY_MODEL` | `en_core_web_lg` | spaCy model used by Presidio |
 | `CVA_PRESIDIO_THRESHOLD` | `0.6` | minimum Presidio score |
+| `CVA_RETRIEVAL_MODELS` | `0` | use CPU embeddings + reranker instead of lexical retrieval |
+| `CVA_EMBEDDING_MODEL` / `CVA_RERANKER_MODEL` | `BAAI/bge-small-en-v1.5` / `BAAI/bge-reranker-base` | |
+| `CVA_RERANKER_ENABLED` | `1` | rerank embedding results |
+| `CVA_RETRIEVAL_TOP_K` / `CVA_JUDGE_CHUNKS` | `10` / `3` | chunks retrieved / shown to the judge |
 
 ## Tests
 
@@ -183,7 +210,8 @@ app/
   cli.py                 cv-analyzer command
   ingestion/             document.py, layout.py, pdf.py, docx.py, parse_check.py
   extraction/            schemas.py, sections.py, dates.py, cv_extractor.py, ner.py, gap_fill.py, jd_parser.py
-  matching/              skills_aliases.yaml (skill vocabulary), skills.py
+  matching/              skills_aliases.yaml, skills.py, schemas.py, chunks.py, deterministic.py, keywords.py,
+                         retrieval.py, judge.py, matcher.py
   privacy/               detectors.py, redactor.py, bias_exposure.py, presidio.py
   llm/                   client.py (Ollama), prompts.py
 tests/                   pytest suite + synthetic CV builders (samples.py)
