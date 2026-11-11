@@ -5,6 +5,7 @@
     cv-analyzer privacy CV.pdf          bias-exposure scan + the redacted copy the grader sees
     cv-analyzer analyze CV.pdf          all of the above
     cv-analyzer jd posting.txt          requirements from a job posting (use - for stdin)
+    cv-analyzer match CV.pdf post.txt   requirement-by-requirement evidence for that posting
 
 Everything runs locally. CV text is printed to your terminal only.
 """
@@ -23,6 +24,7 @@ from app.extraction.jd_parser import format_posting, parse_job_posting
 from app.extraction.schemas import Candidate
 from app.ingestion import load_document
 from app.ingestion.parse_check import check_document
+from app.matching import format_matches, match_requirements
 from app.privacy import analyze_privacy
 
 
@@ -93,7 +95,7 @@ def format_candidate(c: Candidate) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="cv-analyzer", description="Local CV parse-check and structurer.")
+    parser = argparse.ArgumentParser(prog="cv-analyzer", description="Local, privacy-first CV analyzer.")
     sub = parser.add_subparsers(dest="command", required=True)
     for name, help_ in (("check", "parse-check report"), ("structure", "structured CV"),
                         ("privacy", "bias-exposure scan + redacted copy"),
@@ -110,14 +112,23 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--no-llm", action="store_true", help="skip local LLM gap-filling")
             p.add_argument("--today", type=date.fromisoformat, help="reference date for 'present' (YYYY-MM-DD)")
         p.add_argument("-v", "--verbose", action="store_true")
-    p = sub.add_parser("jd", help="requirements from a job posting")
-    p.add_argument("posting", help="text file with the pasted posting, or - for stdin")
-    p.add_argument("--json", action="store_true", help="print JSON instead of text")
-    p.add_argument("--priority", action="append", default=[], metavar="ID=PRIORITY",
-                   help="override a priority, e.g. --priority R3=nice (repeatable)")
-    p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
-    p.add_argument("--no-llm", action="store_true", help="skip local LLM refinement")
-    p.add_argument("-v", "--verbose", action="store_true")
+    for name, help_ in (("jd", "requirements from a job posting"),
+                        ("match", "match a CV against a job posting, requirement by requirement")):
+        p = sub.add_parser(name, help=help_)
+        if name == "match":
+            p.add_argument("cv", type=Path, help="CV file (PDF or DOCX)")
+        p.add_argument("posting", help="text file with the pasted posting, or - for stdin")
+        p.add_argument("--json", action="store_true", help="print JSON instead of text")
+        p.add_argument("--priority", action="append", default=[], metavar="ID=PRIORITY",
+                       help="override a priority, e.g. --priority R3=nice (repeatable)")
+        p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
+        p.add_argument("--no-llm", action="store_true", help="skip the local LLM (refinement and judge)")
+        if name == "match":
+            p.add_argument("--models", action="store_true",
+                           help="retrieve evidence with CPU embeddings + reranker ('matching' extra)")
+            p.add_argument("--presidio", action="store_true", help="also run Presidio + spaCy during redaction")
+            p.add_argument("--today", type=date.fromisoformat, help="reference date for 'present' (YYYY-MM-DD)")
+        p.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -126,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "jd":
         return _jd(args)
+    if args.command == "match":
+        return _match(args)
 
     try:
         doc = load_document(args.cv)
@@ -166,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _jd(args) -> int:
+def _load_posting(args):
+    """The parsed posting with --priority overrides applied, or an exit code."""
     try:
         if args.posting == "-":
             text = sys.stdin.read()
@@ -189,10 +203,47 @@ def _jd(args) -> int:
         except KeyError:
             print(f"error: --priority {override!r}: no requirement {req_id!r}", file=sys.stderr)
             return 2
+    return posting
+
+
+def _jd(args) -> int:
+    posting = _load_posting(args)
+    if isinstance(posting, int):
+        return posting
     if args.json:
         print(json.dumps(posting.model_dump(mode="json", exclude={"text"}), indent=2, ensure_ascii=False))
     else:
         print(format_posting(posting))
+    return 0
+
+
+def _match(args) -> int:
+    try:
+        doc = load_document(args.cv)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    posting = _load_posting(args)
+    if isinstance(posting, int):
+        return posting
+    use_llm = False if args.no_llm else None
+    cand = structure_cv(doc, use_ner=args.ner or None, use_llm=use_llm, today=args.today)
+    # The matcher (and the LLM judge) only ever see the redacted copy.
+    priv = analyze_privacy(doc, cand, use_presidio=args.presidio or None, today=args.today)
+    result = match_requirements(posting, priv.redacted.candidate, use_llm=use_llm,
+                                use_models=args.models or None, today=args.today)
+    if args.json:
+        data = result.model_dump(mode="json")
+        quotes = {c.id: c.quote(doc.text) for c in result.chunks}
+        for c in data["chunks"]:
+            c["original_text"] = quotes[c["id"]]
+        data["requirements"] = posting.model_dump(mode="json", exclude={"text"})["requirements"]
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+    else:
+        print(f"Job posting: {posting.title or '(no title found)'}  ·  {len(posting.requirements)} requirements")
+        for w in posting.warnings + cand.warnings:
+            print(f"  ! {w}")
+        print(format_matches(result, posting, doc.text))
     return 0
 
 
