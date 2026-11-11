@@ -22,6 +22,8 @@ llm = ["ollama>=0.4"]
 # Model-based personal-data detection for redaction (CPU). Also needs a spaCy model:
 #   python -m spacy download en_core_web_lg
 privacy = ["presidio-analyzer>=2.2"]
+# CPU embeddings + cross-encoder reranker for evidence retrieval (pulls PyTorch).
+matching = ["sentence-transformers>=3.0"]
 # OCR for scanned PDFs. Also needs the Tesseract binary on PATH.
 ocr = ["pytesseract>=0.3", "pillow>=10"]
 dev = ["pytest>=8"]
