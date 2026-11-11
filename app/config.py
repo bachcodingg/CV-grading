@@ -90,11 +90,37 @@ class PrivacyConfig:
 
 
 @dataclass(frozen=True)
+class MatchingConfig:
+    # CPU embeddings + cross-encoder reranker (``matching`` extra). Off: a lexical retriever is used.
+    models_enabled: bool = field(default_factory=lambda: _env_bool("RETRIEVAL_MODELS", False))
+    embedding_model: str = field(default_factory=lambda: _env("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"))
+    # bge models expect this instruction in front of a search query (not in front of passages).
+    query_prefix: str = field(default_factory=lambda: _env(
+        "EMBEDDING_QUERY_PREFIX", "Represent this sentence for searching relevant passages: "))
+    reranker_enabled: bool = field(default_factory=lambda: _env_bool("RERANKER_ENABLED", True))
+    reranker_model: str = field(default_factory=lambda: _env("RERANKER_MODEL", "BAAI/bge-reranker-base"))
+    # Chunks retrieved per requirement, and how many of them the judge sees (PLAN.md §3 [5]).
+    top_k: int = field(default_factory=lambda: _env_int("RETRIEVAL_TOP_K", 10))
+    top_n: int = field(default_factory=lambda: _env_int("JUDGE_CHUNKS", 3))
+    # Without the LLM judge, a retrieval score only ever earns "partial" / "tangential" (never "meets").
+    # (partial, tangential) thresholds per scorer, scores in [0, 1]. Calibrated on a few pairs: bge-small
+    # cosine is ~0.77 for a real match but ~0.63-0.67 for merely related text (SQL vs PostgreSQL);
+    # bge-reranker-base gives ~0.66-0.99 for a match and ~0 for unrelated text.
+    fallback_thresholds: dict[str, tuple[float, float]] = field(default_factory=lambda: {
+        "lexical": (0.75, 0.4), "embeddings": (0.8, 0.72), "reranker": (0.5, 0.1)})
+    # Certification names that fuzzy-match at least this well count as the same certificate.
+    cert_match_score: float = 90.0
+    # Field of study (education requirement vs CV) fuzzy-match threshold.
+    field_match_score: float = 85.0
+
+
+@dataclass(frozen=True)
 class Config:
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     ner: NERConfig = field(default_factory=NERConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
+    matching: MatchingConfig = field(default_factory=MatchingConfig)
 
 
 def get_config() -> Config:
