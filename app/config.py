@@ -115,12 +115,50 @@ class MatchingConfig:
 
 
 @dataclass(frozen=True)
+class VerifierConfig:
+    # Share of a chunk's words that must appear in its source text in the CV.
+    min_word_coverage: float = field(default_factory=lambda: _env_float("VERIFY_MIN_COVERAGE", 0.85))
+    # Free-text quotes (and chunks without a span) must fuzzy-match the CV at least this well (PLAN.md §3 [6]).
+    min_quote_score: float = field(default_factory=lambda: _env_float("VERIFY_MIN_QUOTE_SCORE", 90.0))
+    # A "meets"/"exceeds" from the judge whose cited chunks all score below this (and contain no
+    # requirement keyword) is downgraded to "partial". Per scorer, scores in [0, 1]; set well below the
+    # "tangential" fallback thresholds of MatchingConfig, so only clearly unrelated evidence trips it.
+    low_support: dict[str, float] = field(default_factory=lambda: {
+        "lexical": 0.1, "embeddings": 0.55, "reranker": 0.02})
+
+
+@dataclass(frozen=True)
+class ScoringConfig:
+    # overall = sum(w * rating / 4) / sum(w) * 100 (PLAN.md §3 [7]).
+    weights: dict[str, float] = field(default_factory=lambda: {"must": 3.0, "should": 2.0, "nice": 1.0})
+    # Any must-have rated at or below this caps the overall score.
+    gate_max_rating: int = 1
+    gate_cap: float = 49.0
+    # Lowest score for each grade, best first; anything lower is "E".
+    bands: tuple[tuple[str, float], ...] = (("A", 85.0), ("B", 70.0), ("C", 55.0), ("D", 40.0))
+    # Confidence drops to "medium" / "low" when this share of the weight has low-confidence ratings.
+    low_conf_medium: float = 0.25
+    low_conf_low: float = 0.5
+    # Confidence drops to "medium" when more than this share of the requirements was left to the LLM.
+    llm_share_medium: float = 0.5
+    # CV-quality targets.
+    quantified_share: float = 0.3  # share of bullets with a number
+    action_verb_share: float = 0.6  # share of bullets that start with an action verb
+    min_words: int = 250
+    max_words: int = 1100
+    max_pages: int = 2
+    max_bullet_words: int = 35
+
+
+@dataclass(frozen=True)
 class Config:
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     ner: NERConfig = field(default_factory=NERConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     matching: MatchingConfig = field(default_factory=MatchingConfig)
+    verifier: VerifierConfig = field(default_factory=VerifierConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
 
 
 def get_config() -> Config:
