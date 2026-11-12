@@ -281,5 +281,5 @@ def format_matches(result: MatchResult, job: JobPosting, original_text: str | No
         out.append("\nWarnings:")
         out += [f"  ! {w}" for w in result.warnings]
     out.append(f"\n({_MARK['exceeds']} exceeds  {_MARK['meets']} meets  {_MARK['partial']} partial  "
-               f"{_MARK['tangential']} tangential  {_MARK['none']} none. Grade and coaching come in later steps.)")
+               f"{_MARK['tangential']} tangential  {_MARK['none']} none)")
     return "\n".join(out)

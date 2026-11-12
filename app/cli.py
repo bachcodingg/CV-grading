@@ -6,6 +6,7 @@
     cv-analyzer analyze CV.pdf          all of the above
     cv-analyzer jd posting.txt          requirements from a job posting (use - for stdin)
     cv-analyzer match CV.pdf post.txt   requirement-by-requirement evidence for that posting
+    cv-analyzer grade CV.pdf post.txt   grade A–E for that posting, with verified evidence
 
 Everything runs locally. CV text is printed to your terminal only.
 """
@@ -26,6 +27,7 @@ from app.ingestion import load_document
 from app.ingestion.parse_check import check_document
 from app.matching import format_matches, match_requirements
 from app.privacy import analyze_privacy
+from app.scoring import grade_cv
 
 
 def _fmt_range(e) -> str:
@@ -113,9 +115,10 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--today", type=date.fromisoformat, help="reference date for 'present' (YYYY-MM-DD)")
         p.add_argument("-v", "--verbose", action="store_true")
     for name, help_ in (("jd", "requirements from a job posting"),
-                        ("match", "match a CV against a job posting, requirement by requirement")):
+                        ("match", "match a CV against a job posting, requirement by requirement"),
+                        ("grade", "grade a CV for a job posting (A–E), with verified evidence")):
         p = sub.add_parser(name, help=help_)
-        if name == "match":
+        if name in ("match", "grade"):
             p.add_argument("cv", type=Path, help="CV file (PDF or DOCX)")
         p.add_argument("posting", help="text file with the pasted posting, or - for stdin")
         p.add_argument("--json", action="store_true", help="print JSON instead of text")
@@ -123,11 +126,13 @@ def main(argv: list[str] | None = None) -> int:
                        help="override a priority, e.g. --priority R3=nice (repeatable)")
         p.add_argument("--ner", action="store_true", help="enable GLiNER enrichment (CPU)")
         p.add_argument("--no-llm", action="store_true", help="skip the local LLM (refinement and judge)")
-        if name == "match":
+        if name in ("match", "grade"):
             p.add_argument("--models", action="store_true",
                            help="retrieve evidence with CPU embeddings + reranker ('matching' extra)")
             p.add_argument("--presidio", action="store_true", help="also run Presidio + spaCy during redaction")
             p.add_argument("--today", type=date.fromisoformat, help="reference date for 'present' (YYYY-MM-DD)")
+        if name == "grade":
+            p.add_argument("--brief", action="store_true", help="only the grade summary, no per-requirement evidence")
         p.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -139,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         return _jd(args)
     if args.command == "match":
         return _match(args)
+    if args.command == "grade":
+        return _grade(args)
 
     try:
         doc = load_document(args.cv)
@@ -244,6 +251,42 @@ def _match(args) -> int:
         for w in posting.warnings + cand.warnings:
             print(f"  ! {w}")
         print(format_matches(result, posting, doc.text))
+    return 0
+
+
+def _grade(args) -> int:
+    try:
+        doc = load_document(args.cv)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    posting = _load_posting(args)
+    if isinstance(posting, int):
+        return posting
+    run = grade_cv(doc, posting, use_llm=False if args.no_llm else None, use_models=args.models or None,
+                   use_ner=args.ner or None, use_presidio=args.presidio or None, today=args.today)
+    verified = run.verification.result
+    if args.json:
+        data = {"grade": run.grade.to_dict(),
+                "verification": {"faithfulness": run.verification.faithfulness,
+                                 "issues": [vars(i) for i in run.verification.issues]},
+                "matches": verified.model_dump(mode="json"),
+                "requirements": posting.model_dump(mode="json", exclude={"text"})["requirements"]}
+        for c in data["matches"]["chunks"]:
+            c["original_text"] = verified.chunk(c["id"]).quote(doc.text)
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return 0
+    print(f"Job posting: {posting.title or '(no title found)'}  ·  {len(posting.requirements)} requirements")
+    for w in posting.warnings + run.candidate.warnings:
+        print(f"  ! {w}")
+    print()
+    print(run.grade.format())
+    if not args.brief:
+        print()
+        print(format_matches(verified, posting, doc.text))
+    elif run.grade.warnings:
+        print("\nWarnings:")
+        print("\n".join(f"  ! {w}" for w in run.grade.warnings))
     return 0
 
 
