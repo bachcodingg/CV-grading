@@ -4,8 +4,9 @@ A local, privacy-first tool that grades a CV against a job posting. The CV never
 See [PLAN.md](PLAN.md) for the full design.
 
 **Status:** components **[1] Ingestion + parse-check**, **[2] CV Structurer**,
-**[3] Redaction + bias-exposure scan**, **[4] JD Parser** and **[5] Matcher** are implemented.
-Evidence verifier, scoring and the coach (components [6]–[9]) are next.
+**[3] Redaction + bias-exposure scan**, **[4] JD Parser**, **[5] Matcher**, **[6] Evidence verifier** and
+**[7] Scoring engine** are implemented: `cv-analyzer grade` gives an A–E grade for a posting.
+The coach and the bias audit harness (components [8]–[9]) are next.
 
 ## What works today
 
@@ -118,6 +119,45 @@ Each requirement is matched against the **redacted** CV, cheapest step first:
 Without a judge, undecided requirements get a cautious `low`-confidence label; retrieval alone never earns
 more than "partial". Not yet included: the optional NLI pre-check and careful mode (PLAN.md M5).
 
+### [6] Evidence verifier (`app/scoring/verifier.py`)
+Every cited piece of evidence is checked against the user's **original** CV before anything is scored,
+independently of how it was chosen:
+
+| Code | Check | Effect |
+|---|---|---|
+| `INVALID_CHUNK` | the cited chunk ID exists | unknown IDs are dropped |
+| `UNVERIFIED_EVIDENCE` | the chunk's text is in the CV: words compared with its source span (rebuilt headers such as "Engineer, Acme (2021-01 – present)" verify against "Jan 2021 – Present"); chunks without a span are located by fuzzy search (rapidfuzz ≥ 90) | unverifiable chunks are dropped |
+| `NO_EVIDENCE` | a positive label still has verified evidence ("no evidence, no points") | rated `none` |
+| `LOW_SUPPORT` | a judge `meets`/`exceeds` whose excerpts all score very low (per retriever) and contain no requirement keyword | downgraded to `partial`, low confidence |
+| `CAP_EXCEEDED` | no label is above the ceiling computed in code | capped |
+
+`find_quote(text, cv_text)` does the same for free text: a typo is tolerated, a changed number
+("400 services" for "40") or a swapped tool is not. The share of cited evidence that verified is reported as
+**faithfulness** (PLAN.md §7 target: > 98 %). Verified chunks also get a span, so every quote shown to the user
+is their own text.
+
+### [7] Scoring engine (`app/scoring/scorer.py`)
+The grade is computed in code from the verified ratings, never by the LLM:
+
+```
+overall = Σ w_i · (rating_i / 4) / Σ w_i × 100        w: must=3, should=2, nice=1
+must-have gate: any must-have rated ≤ 1 (none / tangential) → overall capped at 49
+grade: A ≥ 85 · B 70–84 · C 55–69 · D 40–54 · E < 40
+```
+
+The report also shows points per priority, the **biggest gaps** (points lost), and a **confidence** level with
+its reasons: parse-check errors or lossy layouts, a large share of weight on low-confidence ratings (e.g. no LLM
+judge), many requirements left to the small LLM, or ratings the verifier had to correct.
+Two numbers sit next to the grade and are never mixed into it:
+
+- **ATS keyword coverage**: posting keywords found **word-for-word** in the CV text, the terms the CV writes
+  differently (posting "Kubernetes", CV "K8s") and the ones that are missing;
+- **CV quality** (0–100): share of bullets with numbers, bullets starting with an action verb, bullet length,
+  word count, pages, core sections, email/phone, dated jobs, summary.
+
+`grade_cv(doc, job)` (`app/scoring/__init__.py`) runs the whole pipeline: parse-check → structure → redact →
+match the redacted CV → verify → score.
+
 ## Setup
 
 ```bash
@@ -148,6 +188,8 @@ cv-analyzer structure my_cv.pdf --json    # machine-readable Candidate JSON
 cv-analyzer jd posting.txt                # requirements from a pasted job posting
 cv-analyzer jd - --priority R3=nice < posting.txt --json   # from stdin, with a priority override
 cv-analyzer match my_cv.pdf posting.txt   # requirement-by-requirement evidence (add --models, --json)
+cv-analyzer grade my_cv.pdf posting.txt   # grade A–E, gaps, ATS coverage, CV quality + verified evidence
+cv-analyzer grade my_cv.pdf posting.txt --brief --priority R3=nice   # summary only, with an override
 ```
 
 ```python
@@ -171,6 +213,11 @@ job = parse_job_posting(open("posting.txt").read(), use_llm=False)
 for r in job.requirements:
     print(r.id, r.priority, r.category, r.text, [k.canonical or k.text for k in r.keywords])
 job.set_priority("R3", "nice")            # the user knows better
+
+from app.scoring import grade_cv
+run = grade_cv(doc, job)                  # parse-check → structure → redact → match → verify → score
+print(run.grade.format())                 # grade, gate, gaps, ATS coverage, CV quality, confidence
+print(run.grade.score, run.grade.grade, run.verification.faithfulness)
 ```
 
 ## Configuration
@@ -193,6 +240,10 @@ Model names and thresholds live in `app/config.py` and can be overridden with `C
 | `CVA_EMBEDDING_MODEL` / `CVA_RERANKER_MODEL` | `BAAI/bge-small-en-v1.5` / `BAAI/bge-reranker-base` | |
 | `CVA_RERANKER_ENABLED` | `1` | rerank embedding results |
 | `CVA_RETRIEVAL_TOP_K` / `CVA_JUDGE_CHUNKS` | `10` / `3` | chunks retrieved / shown to the judge |
+| `CVA_VERIFY_MIN_COVERAGE` | `0.85` | share of a chunk's words that must be in its CV source |
+| `CVA_VERIFY_MIN_QUOTE_SCORE` | `90` | rapidfuzz score for quotes and span-less chunks |
+
+Scoring weights, the must-have gate, grade bands and CV-quality targets are in `ScoringConfig`.
 
 ## Tests
 
@@ -213,6 +264,7 @@ app/
   matching/              skills_aliases.yaml, skills.py, schemas.py, chunks.py, deterministic.py, keywords.py,
                          retrieval.py, judge.py, matcher.py
   privacy/               detectors.py, redactor.py, bias_exposure.py, presidio.py
+  scoring/               verifier.py, scorer.py, __init__.py (grade_cv pipeline)
   llm/                   client.py (Ollama), prompts.py
 tests/                   pytest suite + synthetic CV builders (samples.py)
 ```
